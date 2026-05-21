@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Timetable Priority Planner — manage tasks by urgency and deadline. Fast, private, offline-first.">
+<meta name="keywords" content="priority planner, timetable, task manager, deadline tracker, productivity">
+<meta property="og:title" content="Timetable — Priority Planner">
+<meta property="og:description" content="Manage your tasks by priority level with deadline tracking.">
+<meta property="og:type" content="website">
+<title>Priority — Timetable</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg-layer"></div>
+<div class="bg-overlay"></div>
+<div class="bg-vignette"></div>
+
+<div class="app-shell">
+
+  <aside class="sidebar" role="navigation" aria-label="Main navigation">
+    <div class="sidebar-brand">
+      <div class="brand-name">Timetable</div>
+      <div class="brand-tagline">Priority Planner</div>
+    </div>
+
+    <div class="nav-section-label">Pages</div>
+
+    <a href="index.html" class="nav-link active" aria-current="page">
+      <span class="nav-icon">⬡</span>
+      <span>Priority</span>
+      <span class="nav-badge" id="nav-badge-priority">0</span>
+    </a>
+    <a href="calendar.html" class="nav-link">
+      <span class="nav-icon">◫</span>
+      <span>Calendar</span>
+      <span class="nav-badge" id="nav-badge-calendar">0</span>
+    </a>
+    <a href="completed.html" class="nav-link">
+      <span class="nav-icon">◎</span>
+      <span>Completed</span>
+      <span class="nav-badge" id="nav-badge-completed">0</span>
+    </a>
+
+    <div class="nav-section-label" style="margin-top:24px">Data</div>
+    <a href="#" class="nav-link" onclick="exportAll();return false;">
+      <span class="nav-icon">↑</span>
+      <span>Export</span>
+    </a>
+    <label class="nav-link" style="cursor:pointer">
+      <span class="nav-icon">↓</span>
+      <span>Import</span>
+      <input type="file" accept=".json" style="display:none" onchange="importAll(this.files[0], ()=>location.reload())">
+    </label>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-time" id="liveClock">--:--</div>
+      <div class="sidebar-date" id="liveDate"></div>
+    </div>
+  </aside>
+
+  <main class="main" role="main">
+
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Priority</h1>
+        <p class="page-subtitle">Manage tasks by urgency &amp; deadline</p>
+      </div>
+      <div class="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input type="search" class="search-input" id="searchInput" placeholder="Search tasks… (⌘K)" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="stat-row" id="statRow"></div>
+
+    <form class="add-form" id="addForm" onsubmit="handleAdd(event)" aria-label="Add task">
+      <div class="form-group wide">
+        <label class="form-label" for="fName">Task</label>
+        <input class="form-input" id="fName" placeholder="What needs doing?" required autocomplete="off" maxlength="200">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="fNote">Note</label>
+        <input class="form-input" id="fNote" placeholder="Optional note…" autocomplete="off" maxlength="160">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="fPri">Priority</label>
+        <div class="select-wrap">
+          <select class="form-select" id="fPri">
+            <option value="high">🔴 High</option>
+            <option value="med" selected>🟡 Medium</option>
+            <option value="low">🟢 Low</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="fDate">Deadline</label>
+        <input class="form-input" type="date" id="fDate">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="fTime">Time</label>
+        <input class="form-input" type="time" id="fTime">
+      </div>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-end;padding:10px 24px">+ Add Task</button>
+    </form>
+
+    <div class="filter-bar" id="filterBar" role="group" aria-label="Filter tasks">
+      <button class="filter-chip active" data-f="all"     onclick="setFilter('all',this)">All</button>
+      <button class="filter-chip"        data-f="overdue" onclick="setFilter('overdue',this)">Overdue</button>
+      <button class="filter-chip"        data-f="today"   onclick="setFilter('today',this)">Today</button>
+      <button class="filter-chip"        data-f="week"    onclick="setFilter('week',this)">This Week</button>
+    </div>
+
+    <div id="bandsWrap"></div>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+let ST   = loadState();
+let filter = 'all';
+let search = '';
+
+seedDemo();
+ST = loadState();
+startClock('liveClock');
+document.getElementById('liveDate').textContent =
+  new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' });
+updateNavBadges();
+render();
+
+document.getElementById('searchInput').addEventListener('input', e => {
+  search = e.target.value.trim().toLowerCase();
+  render();
+});
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    document.getElementById('searchInput').focus();
+  }
+  if (e.key === 'Escape') document.getElementById('searchInput').blur();
+  if (e.key === 'Enter' && e.target === document.getElementById('fName')) {
+    document.getElementById('addForm').requestSubmit();
+  }
+});
+
+function setFilter(f, el) {
+  filter = f;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  render();
+}
+
+function render() {
+  renderStats();
+  renderBands();
+  updateNavBadges();
+}
+
+function renderStats() {
+  const active  = ST.tasks.filter(t => !t.done);
+  const overdue = active.filter(t => deadlineStatus(t.deadline) === 'overdue');
+  const today   = active.filter(t => deadlineStatus(t.deadline) === 'today');
+  const done    = ST.tasks.filter(t => t.done);
+
+  document.getElementById('statRow').innerHTML = `
+    <div class="stat-pill">
+      <span class="stat-val">${active.length}</span>
+      <span class="stat-key">Active</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-val" style="color:var(--high)">${overdue.length}</span>
+      <span class="stat-key">Overdue</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-val" style="color:var(--med)">${today.length}</span>
+      <span class="stat-key">Due Today</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-val" style="color:var(--low)">${done.length}</span>
+      <span class="stat-key">Completed</span>
+    </div>
+  `;
+}
+
+function getFilteredTasks(level) {
+  let tasks = ST.tasks.filter(t => !t.done && t.priority === level);
+  if (filter === 'overdue') tasks = tasks.filter(t => deadlineStatus(t.deadline) === 'overdue');
+  else if (filter === 'today') tasks = tasks.filter(t => deadlineStatus(t.deadline) === 'today');
+  else if (filter === 'week') tasks = tasks.filter(t => {
+    const s = deadlineStatus(t.deadline);
+    return s === 'today' || s === 'soon';
+  });
+  if (search) tasks = tasks.filter(t =>
+    t.name.toLowerCase().includes(search) ||
+    (t.note||'').toLowerCase().includes(search) ||
+    (t.subitems||[]).some(s => s.name.toLowerCase().includes(search))
+  );
+  return tasks;
+}
+
+function hl(str) {
+  if (!search) return esc(str);
+  const re = new RegExp('(' + search.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')', 'gi');
+  return esc(str).replace(re, '<mark class="sh">$1</mark>');
+}
+
+function renderBands() {
+  const wrap = document.getElementById('bandsWrap');
+  wrap.innerHTML = '';
+  const bands = [
+    { level: 'high', label: 'High Priority' },
+    { level: 'med',  label: 'Medium Priority' },
+    { level: 'low',  label: 'Low Priority' }
+  ];
+  bands.forEach(({ level, label }) => {
+    const tasks     = getFilteredTasks(level);
+    const collapsed = ST.collapsedBands[level];
+    const band      = document.createElement('div');
+    band.className  = `priority-band band-${level}`;
+    band.innerHTML  = `
+      <div class="band-header ${collapsed ? 'collapsed' : ''}"
+           onclick="toggleBand('${level}', this)"
+           role="button" aria-expanded="${!collapsed}">
+        <div class="band-pip"></div>
+        <span class="band-label">${label}</span>
+        <span class="band-count">${tasks.length} task${tasks.length !== 1 ? 's' : ''}</span>
+        <span class="band-chevron">▾</span>
+      </div>
+      <div class="band-body ${collapsed ? 'hidden' : ''}" id="bb-${level}"></div>
+    `;
+    wrap.appendChild(band);
+    if (!collapsed) {
+      const body = band.querySelector(`#bb-${level}`);
+      if (tasks.length === 0) {
+        body.innerHTML = `<div class="band-empty">No ${label.toLowerCase()} right now</div>`;
+      } else {
+        tasks.forEach(task => body.appendChild(buildTaskEl(task, level)));
+        setupDrop(body, level);
+      }
+    }
+  });
+}
+
+function buildTaskEl(task, level) {
+  const wrap = document.createElement('div');
+  wrap.dataset.id = task.id;
+  wrap.setAttribute('draggable', 'true');
+  const ds = deadlineStatus(task.deadline);
+  const dl = deadlineLabel(task.deadline);
+  const subs = task.subitems || [];
+  const doneCount = subs.filter(s => s.done).length;
+  const pct = subs.length ? Math.round(doneCount / subs.length * 100) : 0;
+  const deadlineHtml = task.deadline ? `
+    <div class="task-deadline">
+      <span class="deadline-time">${fmtDate(task.deadline)}${task.time ? ' · ' + task.time : ''}</span>
+      ${ds ? `<span class="deadline-pill ${ds}"><span class="pill-dot"></span>${dl}</span>` : ''}
+    </div>
+  ` : '<div class="task-deadline"></div>';
+  const progressHtml = subs.length ? `
+    <div class="task-progress">
+      <span class="progress-label">${doneCount}/${subs.length}</span>
+      <div class="progress-track">
+        <div class="progress-fill" style="width:${pct}%"></div>
+      </div>
+    </div>
+  ` : '<div class="task-progress"></div>';
+  wrap.innerHTML = `
+    <div class="task-row band-${level}" role="listitem">
+      <div class="task-check-wrap">
+        <div class="task-checkbox" onclick="toggleDone('${task.id}')"
+             role="checkbox" aria-checked="false" title="Mark complete"></div>
+      </div>
+      <div class="task-info">
+        <div class="task-name" contenteditable="true"
+             onblur="renameTask('${task.id}', this)"
+             spellcheck="true">${hl(task.name)}</div>
+        ${task.note ? `<div class="task-meta"><span class="task-note">${hl(task.note)}</span></div>` : ''}
+      </div>
+      ${deadlineHtml}
+      ${progressHtml}
+      <button class="task-del" onclick="deleteTask('${task.id}')" aria-label="Delete task">✕</button>
+    </div>
+    <div id="subs-${task.id}"></div>
+  `;
+  renderSubitemsEl(wrap.querySelector(`#subs-${task.id}`), task);
+  const row = wrap.querySelector('.task-row');
+  wrap.addEventListener('dragstart', e => {
+    window._dragId = task.id;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  wrap.addEventListener('dragend', () => {
+    row.classList.remove('dragging');
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  });
+  return wrap;
+}
+
+function renderSubitemsEl(container, task) {
+  const subs = task.subitems || [];
+  if (subs.length === 0) {
+    container.innerHTML = `
+      <div class="subitems-container" style="padding-top:4px">
+        <div class="add-sub-row" onclick="this.querySelector('input').focus()">
+          <span style="color:var(--text-dim);font-size:13px">+</span>
+          <input class="add-sub-input" placeholder="Add sub-task & press Enter…"
+                 onkeydown="if(event.key==='Enter'&&this.value.trim()){addSub('${task.id}',this.value.trim());this.value=''}">
+        </div>
+      </div>`;
+    return;
+  }
+  const html = subs.map((sub, i) => `
+    <div class="subitem">
+      <div class="sub-cb ${sub.done ? 'done' : ''}"
+           onclick="toggleSub('${task.id}',${i})"
+           role="checkbox" aria-checked="${sub.done}"></div>
+      <span class="sub-name ${sub.done ? 'done' : ''}"
+            contenteditable="true"
+            onblur="renameSub('${task.id}',${i},this)">${esc(sub.name)}</span>
+      <button class="sub-del" onclick="deleteSub('${task.id}',${i})" aria-label="Remove sub-task">✕</button>
+    </div>
+  `).join('');
+  container.innerHTML = `
+    <div class="subitems-container">
+      ${html}
+      <div class="add-sub-row" onclick="this.querySelector('input').focus()">
+        <span style="color:var(--text-dim);font-size:13px">+</span>
+        <input class="add-sub-input" placeholder="Add sub-task & press Enter…"
+               onkeydown="if(event.key==='Enter'&&this.value.trim()){addSub('${task.id}',this.value.trim());this.value=''}">
+      </div>
+    </div>`;
+}
+
+function setupDrop(body, level) {
+  body.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const after = dragAfterEl(body, e.clientY);
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    if (after) after.querySelector('.task-row')?.classList.add('drag-over');
+  });
+  body.addEventListener('drop', e => {
+    e.preventDefault();
+    const draggedTask = ST.tasks.find(t => t.id === window._dragId);
+    if (!draggedTask) return;
+    const after = dragAfterEl(body, e.clientY);
+    draggedTask.priority = level;
+    const idx = ST.tasks.indexOf(draggedTask);
+    ST.tasks.splice(idx, 1);
+    if (after) {
+      const targetIdx = ST.tasks.findIndex(t => t.id === after.dataset.id);
+      ST.tasks.splice(targetIdx, 0, draggedTask);
+    } else {
+      ST.tasks.push(draggedTask);
+    }
+    saveState(ST);
+    render();
+  });
+}
+
+function dragAfterEl(container, y) {
+  const els = [...container.querySelectorAll('[data-id]:not(.dragging)')];
+  return els.reduce((closest, el) => {
+    const box = el.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) return { offset, el };
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY }).el;
+}
+
+function handleAdd(e) {
+  e.preventDefault();
+  const name = document.getElementById('fName').value.trim();
+  if (!name) return;
+  ST.tasks.unshift({
+    id: uid(), name,
+    note: document.getElementById('fNote').value.trim(),
+    priority: document.getElementById('fPri').value,
+    deadline: document.getElementById('fDate').value || '',
+    time: document.getElementById('fTime').value || '',
+    done: false, subitems: [], createdAt: Date.now()
+  });
+  saveState(ST);
+  render();
+  document.getElementById('fName').value = '';
+  document.getElementById('fNote').value = '';
+  showToast('Task added');
+}
+
+function toggleDone(id) {
+  const t = ST.tasks.find(t => t.id === id);
+  if (!t) return;
+  t.done = !t.done;
+  t.completedAt = t.done ? Date.now() : null;
+  saveState(ST);
+  render();
+}
+
+function deleteTask(id) {
+  ST.tasks = ST.tasks.filter(t => t.id !== id);
+  saveState(ST);
+  render();
+  showToast('Task deleted');
+}
+
+function renameTask(id, el) {
+  const t = ST.tasks.find(t => t.id === id);
+  if (!t) return;
+  const txt = el.innerText.trim();
+  if (txt) t.name = txt; else el.innerText = t.name;
+  saveState(ST);
+}
+
+function addSub(taskId, name) {
+  const t = ST.tasks.find(t => t.id === taskId);
+  if (!t) return;
+  if (!t.subitems) t.subitems = [];
+  t.subitems.push({ id: uid(), name, done: false });
+  saveState(ST);
+  render();
+}
+
+function toggleSub(taskId, idx) {
+  const t = ST.tasks.find(t => t.id === taskId);
+  if (!t || !t.subitems[idx]) return;
+  t.subitems[idx].done = !t.subitems[idx].done;
+  saveState(ST);
+  render();
+}
+
+function deleteSub(taskId, idx) {
+  const t = ST.tasks.find(t => t.id === taskId);
+  if (!t) return;
+  t.subitems.splice(idx, 1);
+  saveState(ST);
+  render();
+}
+
+function renameSub(taskId, idx, el) {
+  const t = ST.tasks.find(t => t.id === taskId);
+  if (!t || !t.subitems[idx]) return;
+  const txt = el.innerText.trim();
+  if (txt) t.subitems[idx].name = txt; else el.innerText = t.subitems[idx].name;
+  saveState(ST);
+}
+
+function toggleBand(level, headerEl) {
+  ST.collapsedBands[level] = !ST.collapsedBands[level];
+  saveState(ST);
+  render();
+}
+</script>
+</body>
+</html>

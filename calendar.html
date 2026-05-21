@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Timetable Calendar — visually plan and schedule events by date and priority.">
+<meta name="keywords" content="calendar, schedule, event planner, timetable, deadline calendar">
+<meta property="og:title" content="Calendar — Timetable">
+<meta property="og:description" content="Add and view events on a visual calendar with priority levels.">
+<meta property="og:type" content="website">
+<title>Calendar — Timetable</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg-layer"></div>
+<div class="bg-overlay"></div>
+<div class="bg-vignette"></div>
+
+<div class="app-shell">
+
+  <aside class="sidebar" role="navigation" aria-label="Main navigation">
+    <div class="sidebar-brand">
+      <div class="brand-name">Timetable</div>
+      <div class="brand-tagline">Priority Planner</div>
+    </div>
+
+    <div class="nav-section-label">Pages</div>
+
+    <a href="index.html" class="nav-link">
+      <span class="nav-icon">⬡</span>
+      <span>Priority</span>
+      <span class="nav-badge" id="nav-badge-priority">0</span>
+    </a>
+    <a href="calendar.html" class="nav-link active" aria-current="page">
+      <span class="nav-icon">◫</span>
+      <span>Calendar</span>
+      <span class="nav-badge" id="nav-badge-calendar">0</span>
+    </a>
+    <a href="completed.html" class="nav-link">
+      <span class="nav-icon">◎</span>
+      <span>Completed</span>
+      <span class="nav-badge" id="nav-badge-completed">0</span>
+    </a>
+
+    <div class="nav-section-label" style="margin-top:24px">Data</div>
+    <a href="#" class="nav-link" onclick="exportAll();return false;">
+      <span class="nav-icon">↑</span>
+      <span>Export</span>
+    </a>
+    <label class="nav-link" style="cursor:pointer">
+      <span class="nav-icon">↓</span>
+      <span>Import</span>
+      <input type="file" accept=".json" style="display:none" onchange="importAll(this.files[0], ()=>location.reload())">
+    </label>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-time" id="liveClock">--:--</div>
+      <div class="sidebar-date" id="liveDate"></div>
+    </div>
+  </aside>
+
+  <main class="main" role="main">
+
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Calendar</h1>
+        <p class="page-subtitle">Schedule &amp; manage events visually</p>
+      </div>
+      <button class="btn btn-primary" onclick="openAddModal()">+ Add Event</button>
+    </div>
+
+    <div class="cal-nav">
+      <button class="btn" onclick="prevMonth()">← Prev</button>
+      <div class="cal-month-title" id="calTitle"></div>
+      <button class="btn" onclick="nextMonth()">Next →</button>
+      <button class="btn" onclick="goToday()" style="margin-left:8px">Today</button>
+    </div>
+
+    <div class="calendar-grid" id="calGrid" role="grid" aria-label="Calendar"></div>
+
+    <div style="display:flex;align-items:center;gap:12px;margin:32px 0 16px">
+      <h2 style="font-family:var(--font-display);font-size:22px;font-weight:300;color:var(--sand-lt);font-style:italic">Upcoming Events</h2>
+      <span style="font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--text-dim)">Next 30 days</span>
+    </div>
+    <div id="upcomingList" class="upcoming-list"></div>
+
+  </main>
+</div>
+
+<div class="modal-overlay" id="addModal" style="display:none" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h2 class="modal-title" id="modalTitle">Add Event</h2>
+    <form onsubmit="saveEvent(event)" id="eventForm">
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label" for="evTitle">Event Title *</label>
+        <input class="form-input" id="evTitle" placeholder="e.g. Team standup, Doctor visit…" required maxlength="120" style="width:100%">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="form-group">
+          <label class="form-label" for="evDate">Date *</label>
+          <input class="form-input" type="date" id="evDate" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="evTime">Time</label>
+          <input class="form-input" type="time" id="evTime">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label" for="evPri">Priority</label>
+        <div class="select-wrap">
+          <select class="form-select" id="evPri" style="width:100%">
+            <option value="high">🔴 High</option>
+            <option value="med" selected>🟡 Medium</option>
+            <option value="low">🟢 Low</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="evNote">Note</label>
+        <input class="form-input" id="evNote" placeholder="Optional note…" maxlength="160" style="width:100%">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Event</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+let ST = loadState();
+let viewYear  = new Date().getFullYear();
+let viewMonth = new Date().getMonth();
+let editingId = null;
+
+seedDemo();
+ST = loadState();
+startClock('liveClock');
+document.getElementById('liveDate').textContent =
+  new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' });
+updateNavBadges();
+render();
+
+function render() {
+  renderCal();
+  renderUpcoming();
+  updateNavBadges();
+}
+
+function renderCal() {
+  const title = new Date(viewYear, viewMonth, 1)
+    .toLocaleDateString('en-GB', { month:'long', year:'numeric' });
+  document.getElementById('calTitle').textContent = title;
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'cal-day-header';
+    el.setAttribute('role', 'columnheader');
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+  const firstDay = new Date(viewYear, viewMonth, 1);
+  const lastDay  = new Date(viewYear, viewMonth + 1, 0);
+  const todayISO = todayStr();
+  let startDow = firstDay.getDay() - 1;
+  if (startDow < 0) startDow = 6;
+  for (let i = 0; i < startDow; i++) {
+    const d = new Date(viewYear, viewMonth, 1 - (startDow - i));
+    addCalCell(grid, d, true, todayISO);
+  }
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    addCalCell(grid, new Date(viewYear, viewMonth, d), false, todayISO);
+  }
+  const total    = startDow + lastDay.getDate();
+  const trailing = Math.ceil(total / 7) * 7 - total;
+  for (let i = 1; i <= trailing; i++) {
+    const d = new Date(viewYear, viewMonth + 1, i);
+    addCalCell(grid, d, true, todayISO);
+  }
+}
+
+function addCalCell(grid, date, otherMonth, todayISO) {
+  const iso  = date.toISOString().slice(0, 10);
+  const cell = document.createElement('div');
+  cell.className = 'cal-cell' + (otherMonth ? ' other-month' : '') + (iso === todayISO ? ' today' : '');
+  cell.setAttribute('role', 'gridcell');
+  cell.title = 'Click to add event on ' + date.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+  const num = document.createElement('div');
+  num.className = 'cal-num';
+  num.textContent = date.getDate();
+  cell.appendChild(num);
+  const evDiv = document.createElement('div');
+  evDiv.className = 'cal-events';
+  const dayEvents = ST.events
+    .filter(ev => ev.date === iso)
+    .sort((a,b) => (a.time||'').localeCompare(b.time||''));
+  dayEvents.slice(0, 3).forEach(ev => {
+    const e = document.createElement('div');
+    e.className = `cal-event ${ev.priority}`;
+    e.textContent = (ev.time ? ev.time + ' ' : '') + ev.title;
+    e.title = ev.title + (ev.note ? '\n' + ev.note : '');
+    evDiv.appendChild(e);
+  });
+  if (dayEvents.length > 3) {
+    const more = document.createElement('div');
+    more.className = 'cal-event';
+    more.style.cssText = 'background:var(--smoke);color:var(--text-dim)';
+    more.textContent = `+${dayEvents.length - 3} more`;
+    evDiv.appendChild(more);
+  }
+  cell.appendChild(evDiv);
+  cell.addEventListener('click', () => openAddModal(iso));
+  grid.appendChild(cell);
+}
+
+function prevMonth() { viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render(); }
+function nextMonth() { viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render(); }
+function goToday()   { const n = new Date(); viewYear = n.getFullYear(); viewMonth = n.getMonth(); render(); }
+
+function renderUpcoming() {
+  const now  = new Date(); now.setHours(0,0,0,0);
+  const in30 = new Date(now.getTime() + 30 * 86400000);
+  const evts = ST.events
+    .filter(ev => { const d = new Date(ev.date + 'T00:00:00'); return d >= now && d <= in30; })
+    .sort((a,b) => a.date.localeCompare(b.date) || (a.time||'').localeCompare(b.time||''));
+  const ul = document.getElementById('upcomingList');
+  if (evts.length === 0) {
+    ul.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-dim);font-style:italic;font-family:var(--font-display);font-size:15px">No upcoming events in the next 30 days</div>`;
+    return;
+  }
+  ul.innerHTML = '';
+  evts.forEach(ev => {
+    const d = new Date(ev.date + 'T00:00:00');
+    const item = document.createElement('div');
+    item.className = 'upcoming-item';
+    item.innerHTML = `
+      <div class="upcoming-date-block">
+        <div class="upcoming-day">${d.getDate()}</div>
+        <div class="upcoming-mon">${d.toLocaleDateString('en-GB',{month:'short'})}</div>
+      </div>
+      <div class="upcoming-divider"></div>
+      <div class="upcoming-info">
+        <div class="upcoming-title">${esc(ev.title)}</div>
+        <div class="upcoming-time">${ev.time ? ev.time + ' · ' : ''}${d.toLocaleDateString('en-GB',{weekday:'long'})}${ev.note ? ' · ' + esc(ev.note) : ''}</div>
+      </div>
+      <span class="deadline-pill ${ev.priority}" style="margin-right:8px">
+        <span class="pill-dot"></span>${ev.priority}
+      </span>
+      <button class="upcoming-del" onclick="deleteEvent('${ev.id}')" aria-label="Delete event">✕</button>
+    `;
+    ul.appendChild(item);
+  });
+}
+
+function openAddModal(dateStr) {
+  editingId = null;
+  document.getElementById('evTitle').value = '';
+  document.getElementById('evDate').value  = dateStr || todayStr();
+  document.getElementById('evTime').value  = '';
+  document.getElementById('evPri').value   = 'med';
+  document.getElementById('evNote').value  = '';
+  document.getElementById('modalTitle').textContent = 'Add Event';
+  document.getElementById('addModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('evTitle').focus(), 60);
+}
+
+function closeModal() {
+  document.getElementById('addModal').style.display = 'none';
+}
+
+document.getElementById('addModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('addModal')) closeModal();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+
+function saveEvent(e) {
+  e.preventDefault();
+  const ev = {
+    id:       editingId || uid(),
+    title:    document.getElementById('evTitle').value.trim(),
+    date:     document.getElementById('evDate').value,
+    time:     document.getElementById('evTime').value,
+    priority: document.getElementById('evPri').value,
+    note:     document.getElementById('evNote').value.trim()
+  };
+  if (editingId) {
+    const i = ST.events.findIndex(e => e.id === editingId);
+    if (i !== -1) ST.events[i] = ev;
+  } else {
+    ST.events.push(ev);
+  }
+  saveState(ST);
+  closeModal();
+  render();
+  showToast(editingId ? 'Event updated' : 'Event added');
+}
+
+function deleteEvent(id) {
+  ST.events = ST.events.filter(e => e.id !== id);
+  saveState(ST);
+  render();
+  showToast('Event deleted');
+}
+</script>
+</body>
+</html>
